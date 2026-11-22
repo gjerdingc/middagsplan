@@ -217,10 +217,24 @@ function askToClose() {
 document.getElementById('dlg-close').addEventListener('click', askToClose);
 document.getElementById('dlg-body').addEventListener('input', () => { dlgDirty = true; });
 dlg.addEventListener('cancel', (e) => { e.preventDefault(); askToClose(); });  // Esc key
-dlg.addEventListener('mousedown', (e) => { dlg.dataset.downOutside = e.target === dlg ? '1' : ''; });
-dlg.addEventListener('click', (e) => {
-  if (e.target === dlg && dlg.dataset.downOutside && !dlgIsForm) closeDialog();
-});
+/**
+ * Calls `close` on a click on the dialog's backdrop. Both the press and the release
+ * must be outside the box, so selecting text and letting go outside it, or dragging
+ * a scrollbar, never closes it.
+ */
+function closeOnBackdrop(dialog, close) {
+  const outside = (e) => {
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  let downOutside = false;
+  dialog.addEventListener('pointerdown', (e) => { downOutside = e.target === dialog && outside(e); });
+  dialog.addEventListener('click', (e) => {
+    if (downOutside && e.target === dialog && outside(e)) close();
+    downOutside = false;
+  });
+}
+closeOnBackdrop(dlg, () => { if (!dlgIsForm) closeDialog(); });
 window.addEventListener('beforeunload', (e) => {
   if (dlg.open && dlgIsForm && dlgDirty) e.preventDefault();
 });
@@ -256,6 +270,10 @@ function suggest(input, options, { minChars = 1, max = 6 } = {}) {
     }, o)));
     list.hidden = false;
   };
+  // Pressing in the list (its scrollbar too) must not take focus from the field, or
+  // the blur below would close the list before it can be scrolled.
+  list.addEventListener('pointerdown', (e) => e.preventDefault());
+  list.addEventListener('mousedown', (e) => e.preventDefault());
   input.autocomplete = 'off';
   input.addEventListener('input', show);
   input.addEventListener('focus', show);
@@ -1138,7 +1156,7 @@ function editNote(current, ingredient, onSave) {
     current && h('button', { type: 'button', class: 'danger', onclick: () => { onSave(''); close(); } }, 'Fjern'),
     h('button', { type: 'button', onclick: close }, 'Avbryt'))));
   pop.addEventListener('cancel', (e) => { e.preventDefault(); close(); });  // Esc closes only the popup
-  pop.addEventListener('click', (e) => { if (e.target === pop) close(); });
+  closeOnBackdrop(pop, close);
   document.body.append(pop);
   pop.showModal();
   input.focus();
